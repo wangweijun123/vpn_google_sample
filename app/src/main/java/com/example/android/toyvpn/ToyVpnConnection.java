@@ -162,14 +162,16 @@ public class ToyVpnConnection implements Runnable {
             throws IOException, InterruptedException, IllegalArgumentException {
         ParcelFileDescriptor iface = null;
         boolean connected = false;
-        // Create a DatagramChannel as the VPN tunnel.
+        // Create a DatagramChannel as the VPN tunnel(隧道).
         try (DatagramChannel tunnel = DatagramChannel.open()) {
 
+            // 将应用的隧道套接字保留在系统 VPN 外部，并避免发生循环连接
             // Protect the tunnel before connecting to avoid loopback.
             if (!mService.protect(tunnel.socket())) {
                 throw new IllegalStateException("Cannot protect the tunnel");
             }
 
+            // 将您应用的隧道套接字连接到 VPN 网关
             // Connect to the server.
             tunnel.connect(server);
 
@@ -183,9 +185,11 @@ public class ToyVpnConnection implements Runnable {
             // Now we are connected. Set the flag.
             connected = true;
 
+            // 从本地接口的文件描述符读取传出的 IP 数据包，进行加密并发送到 VPN 网关
             // Packets to be sent are queued in this input stream.
             FileInputStream in = new FileInputStream(iface.getFileDescriptor());
 
+            // 将传入的数据包（从 VPN 网关接收并解密）写入本地接口的文件描述符
             // Packets received need to be written to this output stream.
             FileOutputStream out = new FileOutputStream(iface.getFileDescriptor());
 
@@ -304,6 +308,8 @@ public class ToyVpnConnection implements Runnable {
     }
 
     private ParcelFileDescriptor configure(String parameters) throws IllegalArgumentException {
+
+        // 您的服务实例调用 VpnService.Builder 方法来建立新的本地接口。===在设备上为 VPN 流量配置新的本地 TUN 接口
         // Configure a builder while parsing the parameters.
         VpnService.Builder builder = mService.new Builder();
         for (String parameter : parameters.split(" ")) {
@@ -314,9 +320,13 @@ public class ToyVpnConnection implements Runnable {
                         builder.setMtu(Short.parseShort(fields[1]));
                         break;
                     case 'a':
+                        // 添加至少一个 IPv4 或 IPv6 地址以及系统指定为本地 TUN 接口地址的子网掩码。
+                        // 您的应用通常会在握手过程中收到来自 VPN 网关的 IP 地址和子网掩码
                         builder.addAddress(fields[1], Integer.parseInt(fields[2]));
                         break;
                     case 'r':
+                        // 如果您希望系统通过 VPN 接口发送流量，请至少添加一个路由。路由按目标地址过滤。
+                        // 要接受所有流量，请设置开放路由，例如 0.0.0.0/0 或 ::/0。
                         builder.addRoute(fields[1], Integer.parseInt(fields[2]));
                         break;
                     case 'd':
@@ -336,6 +346,11 @@ public class ToyVpnConnection implements Runnable {
         for (String packageName : mPackages) {
             try {
                 if (mAllow) {
+                    // 按应用开启的 VPN
+                    //VPN 应用可以过滤允许哪些已安装的应用通过 VPN 连接发送流量。您可以创建允许列表，也可以创建禁止列表，
+                    // 但不能同时创建这两者。如果您不创建允许或禁止列表，系统会通过 VPN 发送所有网络流量。
+                    //您的 VPN 应用必须先设置列表，然后建立连接。如果您需要更改列表，请建立新的 VPN 连接。当您将应用
+                    // 添加到列表中时，该应用必须已安装在设备上。
                     builder.addAllowedApplication(packageName);
                 } else {
                     builder.addDisallowedApplication(packageName);
@@ -349,6 +364,7 @@ public class ToyVpnConnection implements Runnable {
             builder.setHttpProxy(ProxyInfo.buildDirectProxy(mProxyHostName, mProxyHostPort));
         }
         synchronized (mService) {
+            // 以便系统建立本地 TUN 接口并开始通过该接口传送流量
             vpnInterface = builder.establish();
             if (mOnEstablishListener != null) {
                 mOnEstablishListener.onEstablish(vpnInterface);

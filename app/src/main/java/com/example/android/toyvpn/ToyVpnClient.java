@@ -105,6 +105,8 @@ public class ToyVpnClient extends Activity {
                     .putBoolean(Prefs.ALLOW, allowed.isChecked())
                     .putStringSet(Prefs.PACKAGES, packageSet)
                     .commit();
+
+            // 准备服务
             Intent intent = VpnService.prepare(ToyVpnClient.this);
             if (intent != null) {
                 startActivityForResult(intent, 0);
@@ -140,6 +142,7 @@ public class ToyVpnClient extends Activity {
     @Override
     protected void onActivityResult(int request, int result, Intent data) {
         if (result == RESULT_OK) {
+            // 启动 ToyVpnService
             startService(getServiceIntent().setAction(ToyVpnService.ACTION_CONNECT));
         }
     }
